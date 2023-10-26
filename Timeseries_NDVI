@@ -1,0 +1,54 @@
+//Getting phenology of sampling points
+
+var maumee = ee.FeatureCollection('users/kessi9400/Maumee_WGS84');
+var sites_2020 = ee.FeatureCollection('users/kessi9400/Pipeline_site_coordinates_2020');
+var sites_2021 = ee.FeatureCollection('users/kessi9400/Pipeline_site_coordinates_2021');
+
+print(sites_2020);
+print(sites_2021);
+
+var getNDVIS2 = function(image){
+  var ndvi = image.normalizedDifference(['B8','B4']);
+  return(ndvi);
+};
+
+function maskS2clouds(image) {
+  var qa = image.select('QA60');
+
+  // Bits 10 and 11 are clouds and cirrus, respectively.
+  var cloudBitMask = 1 << 10;
+  var cirrusBitMask = 1 << 11;
+
+  // Both flags should be set to zero, indicating clear conditions.
+  var mask = qa.bitwiseAnd(cloudBitMask).eq(0)
+      .and(qa.bitwiseAnd(cirrusBitMask).eq(0));
+
+  return image.updateMask(mask).divide(10000);
+}
+
+
+var dataset = ee.ImageCollection('COPERNICUS/S2_SR')
+                  .filterDate('2020-05-01', '2020-11-15')
+                  .filterBounds(maumee)
+                  .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 1))
+                  .map(maskS2clouds);
+                  // Pre-filter to get less cloudy granules.
+                  //.filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20))
+                  //.map(maskS2clouds);
+                  
+print(dataset);
+var ndvi = dataset.map(getNDVIS2);
+print(ndvi);
+
+// Create a time series chart.
+var tempTimeSeries = ui.Chart.image.seriesByRegion(
+    ndvi, sites_2020, ee.Reducer.mean(), 'nd', 10, 'system:index', 'Sampling_Z')
+        .setChartType('ScatterChart')
+        .setOptions({
+          title: 'NDVI on cover cropped fields in Maumee 2017/18 season',
+          vAxis: {title: 'NDVI'},
+          lineWidth: 3,
+          pointSize: 4});
+
+// Display.
+print(tempTimeSeries);

@@ -1,0 +1,176 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var geometry = 
+    /* color: #d63000 */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[-85.85103852428801, 43.334246071830414],
+          [-85.85103852428801, 39.58143113202919],
+          [-79.08346039928801, 39.58143113202919],
+          [-79.08346039928801, 43.334246071830414]]], null, false);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+// A program to extract peak July/August vegetation index (NDVI or EVI) using Sentinel 2 images
+
+//read the files for site coordinates and pipelines by first uploading into your GEE
+//These data can be first uploaded in shapefile format
+//var site_coordinates = ee.FeatureCollection('users/kessi9400/Site_coordinates_gas_pipeline');
+//var area_boundary_gas_pipeline = ee.FeatureCollection('users/kessi9400/Area_boundary_Gas_pipeline');
+var gas_pipeline_nexus = ee.FeatureCollection('projects/ee-kessi9400/assets/Nexus_buffer_200m');
+var gas_pipeline_rover = ee.FeatureCollection('projects/ee-kessi9400/assets/Rover_buffer_200m');
+var gas_pipeline_utopia = ee.FeatureCollection('projects/ee-kessi9400/assets/Utopia_buffer_200m');
+
+//Cropland Data layer
+var cdl = ee.ImageCollection('USDA/NASS/CDL');
+
+//function to generate annual cropland data layer
+var annual_cdl = function(year){
+  //var cdl = ee.ImageCollection('USDA/NASS/CDL');
+  var corn = 1;
+  var soybean = 5;
+  var cdl_year = ee.Image(cdl.filter(ee.Filter.eq('system:index', String(year))).first()).select('cropland');
+  var cdl_year_crop = cdl_year.eq(soybean).updateMask(cdl_year.eq(soybean)).toFloat();
+  return(cdl_year_crop);
+};
+
+var cdl_2020 = annual_cdl(2020);
+var cdl_2019 = annual_cdl(2019);
+var cdl_2018 = annual_cdl(2018);
+var cdl_2017 = annual_cdl(2017);
+var cdl_2016 = annual_cdl(2016);
+var cdl_2015 = annual_cdl(2015);
+
+//print(site_coordinates);
+
+//Map.addLayer(gas_pipeline_nexus);
+//function to select Sentinel2 images
+//provide the arguments for starting date and ending date for the imagery, this is when you call this function later in the program
+
+var select_images = function(startyear, startmonth, startday, endyear, endmonth, endday){
+  var start = ee.Date.fromYMD(startyear, startmonth, startday);
+  var end = ee.Date.fromYMD(endyear, endmonth, endday);
+  
+  
+var images = ee.ImageCollection('COPERNICUS/S2')
+  .filterDate(start, end).filterBounds(geometry)
+  //Pre-filter to get less cloudy granules
+  .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20))
+  .map(maskS2clouds);
+  
+  return(images);
+  
+};
+
+//function to filter cloud and calculate vegetation index
+var getNDVIS2 = function(image){
+  var ndvi = image.normalizedDifference(['B8','B4']);
+  return(ndvi);
+};
+
+function maskS2clouds(image) {
+  var qa = image.select('QA60');
+
+  // Bits 10 and 11 are clouds and cirrus, respectively.
+  var cloudBitMask = 1 << 10;
+  var cirrusBitMask = 1 << 11;
+
+  // Both flags should be set to zero, indicating clear conditions.
+  var mask = qa.bitwiseAnd(cloudBitMask).eq(0)
+      .and(qa.bitwiseAnd(cirrusBitMask).eq(0));
+
+  return image.updateMask(mask).divide(10000);
+}
+
+//NDVI palette to display
+
+var NDVIpalette = ['FFFFFF', 'CE7E45', 'DF923D', 'F1B555', 'FCD163', '99B718',
+               '74A901', '66A000', '529400', '3E8601', '207401', '056201',
+               '004C00', '023B01', '012E01', '011D01', '011301'];
+               
+
+
+
+//2020 season
+//first call the function to select the satellite imagery; change the dates accordingly
+var image_2020 = select_images(2019,7,1,2019,8,31);
+//print(image_2020);
+
+//convert images into correspnding NDVI values from the bands
+var NDVI_2020 = image_2020.map(getNDVIS2);
+
+//calculate maximum,minimum, mean and std dev NDVI pixel values from the group of images
+//var NDVI_2020_max = NDVI_2020.reduce(ee.Reducer.max());
+//var NDVI_2020_min = NDVI_2020.reduce(ee.Reducer.min());
+var NDVI_2020_mean = NDVI_2020.reduce(ee.Reducer.mean());
+//var NDVI_2020_std = NDVI_2020.reduce(ee.Reducer.stdDev());
+
+//Clip the NDVI images to only cover gas pipeline area; this is actually buffered area of the gas pipeline created in arcGIS
+//var NDVI_2020_max_clipped = NDVI_2020_max.clip(gas_pipeline_utopia);
+//var NDVI_2020_min_clipped = NDVI_2020_min.clip(gas_pipeline_utopia);
+var NDVI_2020_mean_clipped = NDVI_2020_mean.clip(gas_pipeline_utopia);
+var NDVI_2020_mean_masked = NDVI_2020_mean_clipped.updateMask(cdl_2019);
+//var NDVI_2020_std_clipped = NDVI_2020_std.clip(gas_pipeline_utopia);
+
+//print(NDVI_2020_std_clipped);
+
+//for visualization
+//Map.addLayer(NDVI_2020_max_clipped.select('nd_max'), {min: 0, max: 1, palette: NDVIpalette},'2020_peak_NDVI');
+//Map.addLayer(NDVI_2020_min_clipped.select('nd_min'), {min: 0, max: 1, palette: NDVIpalette},'2020_min_NDVI');
+Map.addLayer(NDVI_2020_mean_masked.select('nd_mean'), {min: 0, max: 1, palette: NDVIpalette},'2020_mean_NDVI');
+//Map.addLayer(NDVI_2020_std_clipped.select('nd_stdDev'), {min: 0, max: 1, palette: NDVIpalette},'2020_stdDev_NDVI');
+
+//make composite of nd_max, nd_min, nd_mean, and nd_stdDev
+//add them as bands together
+//var image1 = NDVI_2020_max_clipped.addBands(NDVI_2020_min_clipped);
+//var image2 = image1.addBands(NDVI_2020_mean_clipped);
+//var composite_image = image2.addBands(NDVI_2020_std_clipped);
+
+
+
+/*
+
+//Sample point values
+var sampled_points = composite_image.sampleRegions({
+  collection: site_coordinates,
+  //properties: 'SN',
+  scale: 10,
+  geometries: true
+});
+
+print(sampled_points);
+
+///print(sampled_points);
+//Export the sampled points
+Export.table.toDrive({
+  collection: sampled_points,
+  description: '2020_site_coordinates_sampled',
+  fileFormat: 'CSV'
+});
+
+*/
+
+
+
+//Export image to your GoogleDrive
+Export.image.toDrive({
+  image: NDVI_2020_mean_masked,
+  description: '2019soybean_jul_aug_mean_NDVI_Utopia',
+  scale: 10,
+  crs: 'EPSG: 32617',
+  fileFormat: 'GeoTIFF',
+  region: gas_pipeline_utopia,
+  maxPixels: 5000000000
+});
+
+//check count of images
+//var image_june = select_images(2020,6,1,2020,6,30);
+//var image_july = select_images(2020,7,1,2020,7,31);
+//var image_aug = select_images(2020,8,1,2020,8,31);
+
+//print(image_june);
+//print(image_july);
+//print(image_aug);
+

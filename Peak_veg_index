@@ -1,0 +1,150 @@
+/**** Start of imports. If edited, may not auto-convert in the playground. ****/
+var geometry = 
+    /* color: #d63000 */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[-85.85103852428801, 43.334246071830414],
+          [-85.85103852428801, 39.58143113202919],
+          [-79.08346039928801, 39.58143113202919],
+          [-79.08346039928801, 43.334246071830414]]], null, false);
+/***** End of imports. If edited, may not auto-convert in the playground. *****/
+// A program to extract peak July/August vegetation index (NDVI or EVI) using Sentinel 2 images
+var site_coordinates = ee.FeatureCollection('users/kessi9400/Site_coordinates_gas_pipeline');
+var area_boundary_gas_pipeline = ee.FeatureCollection('users/kessi9400/Area_boundary_Gas_pipeline');
+var gas_pipeline_nexus = ee.FeatureCollection('users/kessi9400/Gas_pipeline_Nexus_buffer_50m');
+
+//function to select Sentinel2 images
+var select_images = function(startyear, startmonth, startday, endyear, endmonth, endday){
+  var start = ee.Date.fromYMD(startyear, startmonth, startday);
+  var end = ee.Date.fromYMD(endyear, endmonth, endday);
+  
+  var images = ee.ImageCollection('COPERNICUS/S2')
+  .filterDate(start, end).filterBounds(area_boundary_gas_pipeline)
+  //Pre-filter to get less cloudy granules
+  .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 20))
+  .map(maskS2clouds);
+  
+  return(images);
+  
+};
+
+//function to filter cloud and calculate vegetation index
+var getNDVIS2 = function(image){
+  var ndvi = image.normalizedDifference(['B8','B4']);
+  return(ndvi);
+};
+
+function maskS2clouds(image) {
+  var qa = image.select('QA60');
+
+  // Bits 10 and 11 are clouds and cirrus, respectively.
+  var cloudBitMask = 1 << 10;
+  var cirrusBitMask = 1 << 11;
+
+  // Both flags should be set to zero, indicating clear conditions.
+  var mask = qa.bitwiseAnd(cloudBitMask).eq(0)
+      .and(qa.bitwiseAnd(cirrusBitMask).eq(0));
+
+  return image.updateMask(mask).divide(10000);
+}
+
+//NDVI palette to display
+
+var NDVIpalette = ['FFFFFF', 'CE7E45', 'DF923D', 'F1B555', 'FCD163', '99B718',
+               '74A901', '66A000', '529400', '3E8601', '207401', '056201',
+               '004C00', '023B01', '012E01', '011D01', '011301'];
+               
+
+//2015 season
+var image_2015 = select_images(2015,7,1,2015,8,31);
+var NDVI_2015 = image_2015.map(getNDVIS2);
+var NDVI_2015_max = NDVI_2015.reduce(ee.Reducer.max());
+
+//2016 season
+var image_2016 = select_images(2016,7,1,2016,8,31);
+var NDVI_2016 = image_2016.map(getNDVIS2);
+var NDVI_2016_max = NDVI_2016.reduce(ee.Reducer.max());
+
+//2017 season
+var image_2017 = select_images(2017,7,1,2017,8,31);
+var NDVI_2017 = image_2017.map(getNDVIS2);
+var NDVI_2017_max = NDVI_2017.reduce(ee.Reducer.max());
+
+//2018 season
+var image_2018 = select_images(2018,7,1,2018,8,31);
+var NDVI_2018 = image_2018.map(getNDVIS2);
+var NDVI_2018_max = NDVI_2018.reduce(ee.Reducer.max());
+
+//2019 season
+var image_2019 = select_images(2019,7,1,2019,8,31);
+var NDVI_2019 = image_2019.map(getNDVIS2);
+var NDVI_2019_max = NDVI_2019.reduce(ee.Reducer.max());
+
+
+
+//2020 season
+var image_2020 = select_images(2020,7,1,2020,8,31);
+print(image_2020);
+var NDVI_2020 = image_2020.map(getNDVIS2);
+var NDVI_2020_max = NDVI_2020.reduce(ee.Reducer.max());
+var NDVI_2020_min = NDVI_2020.reduce(ee.Reducer.min());
+var NDVI_2020_mean = NDVI_2020.reduce(ee.Reducer.mean());
+var NDVI_2020_std = NDVI_2020.reduce(ee.Reducer.stdDev());
+
+var NDVI_2020_max_clipped = NDVI_2020_max.clip(gas_pipeline_nexus);
+var NDVI_2020_min_clipped = NDVI_2020_min.clip(gas_pipeline_nexus);
+var NDVI_2020_mean_clipped = NDVI_2020_mean.clip(gas_pipeline_nexus);
+var NDVI_2020_std_clipped = NDVI_2020_std.clip(gas_pipeline_nexus);
+
+//print(NDVI_2020_std_clipped);
+
+//for visualization
+//Map.addLayer(NDVI_2015_max.select('nd_max'), {min: 0, max: 1, palette: NDVIpalette},'2015_peak_NDVI');
+//Map.addLayer(NDVI_2016_max.select('nd_max'), {min: 0, max: 1, palette: NDVIpalette},'2016_peak_NDVI');
+//Map.addLayer(NDVI_2017_max.select('nd_max'), {min: 0, max: 1, palette: NDVIpalette},'2017_peak_NDVI');
+//Map.addLayer(NDVI_2018_max.select('nd_max'), {min: 0, max: 1, palette: NDVIpalette},'2018_peak_NDVI');
+//Map.addLayer(NDVI_2019_max.select('nd_max'), {min: 0, max: 1, palette: NDVIpalette},'2019_peak_NDVI');
+Map.addLayer(NDVI_2020_max_clipped.select('nd_max'), {min: 0, max: 1, palette: NDVIpalette},'2020_peak_NDVI');
+Map.addLayer(NDVI_2020_min_clipped.select('nd_min'), {min: 0, max: 1, palette: NDVIpalette},'2020_min_NDVI');
+Map.addLayer(NDVI_2020_mean_clipped.select('nd_mean'), {min: 0, max: 1, palette: NDVIpalette},'2020_mean_NDVI');
+Map.addLayer(NDVI_2020_std_clipped.select('nd_stdDev'), {min: 0, max: 1, palette: NDVIpalette},'2020_stdDev_NDVI');
+//Map.addLayer(area_boundary_gas_pipeline);
+//exporting images
+//print(site_coordinates);
+
+/*
+//Sample point values
+var sampled_points = NDVI_2020_max.sampleRegions({
+  collection: site_coordinates,
+  //properties: 'SN',
+  scale: 10,
+  geometries: true
+});
+
+*/
+/*
+///print(sampled_points);
+//Export the sampled points
+Export.table.toDrive({
+  collection: sampled_points,
+  description: '2020_site_coordinates_sampled',
+  fileFormat: 'CSV'
+});
+
+*/
+
+//Export image
+Export.image.toDrive({
+  image: NDVI_2020_min_clipped,
+  description: '2020_min_NDVI',
+  scale: 10,
+  crs: 'EPSG: 32617',
+  fileFormat: 'GeoTIFF',
+  region: gas_pipeline_nexus,
+  maxPixels: 500000000
+});
